@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Stone Circle - Nim Multiplayer Game</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate: { 850: '#151f32', 950: '#0a0f1d' }
+                    },
+                    keyframes: {
+                        stonePop: {
+                            '0%': { transform: 'scale(1)', opacity: '1' },
+                            '50%': { transform: 'scale(1.25) translateY(-8px)', opacity: '0.8' },
+                            '100%': { transform: 'scale(0) translateY(-24px)', opacity: '0' }
+                        },
+                        stoneSpawn: {
+                            '0%': { transform: 'scale(0) translateY(10px)', opacity: '0' },
+                            '100%': { transform: 'scale(1) translateY(0)', opacity: '1' }
+                        },
+                        pulseGlow: {
+                            '0%, 100%': { boxShadow: '0 0 15px rgba(99, 102, 241, 0.4)' },
+                            '50%': { boxShadow: '0 0 28px rgba(99, 102, 241, 0.8)' }
+                        }
+                    },
+                    animation: {
+                        'stone-pop': 'stonePop 0.35s ease-out forwards',
+                        'stone-spawn': 'stoneSpawn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        'pulse-glow': 'pulseGlow 2s infinite ease-in-out'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+        
+        .font-cinzel { font-family: 'Cinzel', serif; }
+        body { font-family: 'Inter', sans-serif; }
+
+        /* Custom Stone Realistic 3D Styling */
+        .pebble {
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+            background: radial-gradient(circle at 35% 30%, #a8b2c1, #515d6e 55%, #2a3341 95%);
+            box-shadow: inset 2px 2px 4px rgba(255,255,255,0.35), inset -3px -3px 6px rgba(0,0,0,0.6), 0 8px 12px -2px rgba(0,0,0,0.5);
+        }
+        .pebble:hover {
+            transform: translateY(-4px) scale(1.05);
+            box-shadow: inset 2px 2px 5px rgba(255,255,255,0.45), inset -3px -3px 6px rgba(0,0,0,0.6), 0 12px 18px -2px rgba(0,0,0,0.65);
+        }
+
+        /* Gold highlight stone */
+        .pebble-last {
+            background: radial-gradient(circle at 35% 30%, #fde047, #ca8a04 55%, #713f12 95%) !important;
+            box-shadow: 0 0 15px rgba(234, 179, 8, 0.7), inset 2px 2px 5px rgba(255,255,255,0.5) !important;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <header class="w-full bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-30">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-amber-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                    <span class="text-xl">🪨</span>
+                </div>
+                <div>
+                    <h1 class="text-lg font-cinzel font-bold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-indigo-200 to-white">
+                        THE STONE CIRCLE
+                    </h1>
+                    <p class="text-[11px] text-slate-400 font-medium tracking-tight">Ancient Nim Strategy Duel</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button id="open-rules-btn" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:border-slate-600 transition flex items-center gap-1.5 shadow-sm">
+                    <span>📜</span>
+                    <span class="hidden sm:inline">Game Rules</span>
+                </button>
+                <button id="open-backend-btn" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-900/50 hover:bg-indigo-800/60 text-indigo-300 border border-indigo-700/60 transition flex items-center gap-1.5 shadow-sm">
+                    <span>🐍</span>
+                    <span>Python Backend</span>
+                </button>
+                <button id="audio-toggle-btn" class="p-2 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Toggle Sound">
+                    <span id="audio-icon">🔊</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-center items-center relative">
+
+        <!-- ================= VIEW 1: LOBBY & PLAYER SETUP ================= -->
+        <section id="lobby-view" class="w-full max-w-2xl bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur relative overflow-hidden transition-all duration-300">
+            <!-- Ambient Glow -->
+            <div class="absolute -top-24 -left-24 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-24 -right-24 w-60 h-60 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-medium mb-3">
+                    <span>👥</span> Multi-Player Setup
+                </div>
+                <h2 class="text-2xl sm:text-3xl font-cinzel font-bold text-white tracking-wide">Gather the Challengers</h2>
+                <p class="text-sm text-slate-400 mt-1">Add players to begin. Player 1 takes the inaugural stone move!</p>
+            </div>
+
+            <!-- Add Player Form -->
+            <div class="bg-slate-950/70 border border-slate-800/80 p-4 rounded-2xl mb-6 shadow-inner">
+                <form id="add-player-form" class="flex flex-col sm:flex-row gap-3">
+                    <div class="relative flex-1">
+                        <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm">👤</span>
+                        <input 
+                            type="text" 
+                            id="player-name-input" 
+                            placeholder="Enter player name (e.g., Magnus, Sophia)..." 
+                            maxlength="16"
+                            class="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                            autocomplete="off"
+                        >
+                    </div>
+                    <button 
+                        type="submit" 
+                        id="add-player-btn"
+                        class="px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold text-sm transition shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 active:scale-95 shrink-0"
+                    >
+                        <span>➕ Add Player</span>
+                    </button>
+                </form>
+                <div id="add-error-msg" class="text-xs text-rose-400 mt-2 hidden flex items-center gap-1 font-medium">
+                    <span>⚠️</span> <span id="error-text">Please enter a valid name.</span>
+                </div>
+            </div>
+
+            <!-- Players Roster -->
+            <div class="mb-6">
+                <div class="flex items-center justify-between mb-3 px-1">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <span>Current Players</span>
+                        <span id="player-count-badge" class="bg-slate-800 text-indigo-300 px-2 py-0.5 rounded-full text-[11px] font-mono border border-slate-700">0</span>
+                    </h3>
+                    <button id="clear-players-btn" class="text-xs text-slate-500 hover:text-rose-400 transition hidden">Clear All</button>
+                </div>
+
+                <div id="players-list" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    <!-- Dynamic player chips -->
+                    <div id="empty-state" class="text-center py-8 text-slate-500 text-sm border-2 border-dashed border-slate-800 rounded-xl bg-slate-900/30">
+                        No players added yet. Enter names above to build your circle!
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dynamic Bottom Control Area -->
+            <div class="pt-2 border-t border-slate-800/80">
+                <!-- Warning Notice: Shown when < 2 players -->
+                <div id="min-players-warning" class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 flex items-center gap-3 text-amber-300 text-sm">
+                    <span class="text-lg">⚠️</span>
+                    <p class="font-medium">You have to add at least <strong class="underline decoration-amber-400/50">2 players</strong> to begin the match.</p>
+                </div>
+
+                <!-- Start Match Button: Visible only when >= 2 players -->
+                <div id="start-game-container" class="hidden">
+                    <button 
+                        id="start-match-btn"
+                        class="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-600 hover:from-emerald-400 hover:to-indigo-500 text-white font-bold text-base tracking-wide shadow-xl shadow-emerald-500/20 hover:shadow-emerald-500/35 transition-all duration-300 transform active:scale-98 flex items-center justify-center gap-2 group"
+                    >
+                        <span>⚔️ BEGIN GAME</span>
+                        <span class="text-xs bg-white/20 px-2.5 py-0.5 rounded-full font-normal group-hover:bg-white/30 transition">
+                            Mysterious Pile
+                        </span>
+                    </button>
+                    <p class="text-center text-[12px] text-slate-400 mt-2">
+                        You can continue to add more players above if desired before starting.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= VIEW 2: ACTIVE GAME ARENA ================= -->
+        <section id="game-view" class="w-full max-w-5xl hidden flex-col gap-6">
+            
+            <!-- Turn Tracker & Game Status Bar -->
+            <div class="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl backdrop-blur flex flex-col md:flex-row items-center justify-between gap-4">
+                
+                <!-- Current Turn Banner -->
+                <div class="flex items-center gap-4 w-full md:w-auto">
+                    <div id="active-turn-avatar" class="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-2xl font-bold shadow-lg shadow-indigo-600/30 border-2 border-indigo-400 shrink-0 transition-transform duration-300 animate-pulse-glow">
+                        👤
+                    </div>
+                    <div>
+                        <div class="text-[11px] font-bold tracking-wider text-indigo-400 uppercase">Active Turn</div>
+                        <div id="active-player-name" class="text-xl sm:text-2xl font-cinzel font-bold text-white tracking-wide truncate max-w-[220px]">
+                            Player 1
+                        </div>
+                        <div id="turn-instruction" class="text-xs text-slate-400">
+                            Choose 1, 2, or 3 stones from the hidden mound.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stone Counter Progress Pill (Concealed / Qualitative State) -->
+                <div class="flex items-center gap-6 bg-slate-950/80 px-5 py-3 rounded-xl border border-slate-800 w-full md:w-auto justify-around">
+                    <div class="text-center">
+                        <div class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Pile State</div>
+                        <div id="pile-vibe-badge" class="text-sm sm:text-base font-bold text-amber-300 font-cinzel">Unknown</div>
+                    </div>
+                    <div class="h-8 w-px bg-slate-800"></div>
+                    <div class="text-center">
+                        <div class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Total Players</div>
+                        <div id="total-players-badge" class="text-xl font-bold text-slate-300 font-mono">0</div>
+                    </div>
+                    <div class="h-8 w-px bg-slate-800"></div>
+                    <div class="text-center">
+                        <div class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Round</div>
+                        <div id="round-counter-badge" class="text-xl font-bold text-indigo-400 font-mono">1</div>
+                    </div>
+                </div>
+
+                <!-- Match Actions -->
+                <div class="flex items-center gap-2 self-end md:self-auto">
+                    <button id="abandon-game-btn" class="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-800 transition flex items-center gap-1.5" title="Quit to Lobby">
+                        <span>🚪 Quit Match</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Central Playground: Left Stone Circle Visualizer, Right Log & Players -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Stone Pile Visual Canvas Container (Spans 2 cols on lg) -->
+                <div class="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-2xl backdrop-blur flex flex-col justify-between relative overflow-hidden min-h-[460px]">
+                    <!-- Sacred circle background ring -->
+                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+                        <div class="w-80 h-80 rounded-full border-4 border-dashed border-indigo-400"></div>
+                        <div class="absolute w-60 h-60 rounded-full border border-amber-400"></div>
+                    </div>
+
+                    <!-- Top pile header -->
+                    <div class="flex items-center justify-between mb-2 z-10">
+                        <div class="flex items-center gap-2">
+                            <span class="text-amber-400 text-sm">✨</span>
+                            <span class="text-xs uppercase font-bold tracking-widest text-slate-300">Secret Sacred Mound</span>
+                        </div>
+                        <span id="pile-status-hint" class="text-xs text-indigo-300 font-medium bg-indigo-950/60 border border-indigo-800/60 px-2.5 py-1 rounded-full">Mysterious heap</span>
+                    </div>
+
+                    <!-- Stones Mystic Heap Field (No individual numbers, natural overlapping mound) -->
+                    <div id="stone-pile-container" class="flex-1 flex items-center justify-center relative p-6 z-10 min-h-[220px]">
+                        <!-- Mystical Mound Visual -->
+                        <div id="mound-visual" class="relative flex items-center justify-center w-64 h-64 transition-all duration-500">
+                            <!-- Injected stones layered into a natural secret heap -->
+                        </div>
+                    </div>
+
+                    <!-- Action Pick Controls -->
+                    <div class="mt-4 pt-4 border-t border-slate-800/90 z-10">
+                        <div class="text-center mb-3">
+                            <span class="text-xs font-semibold text-slate-400">Choose stones to remove from the secret mound:</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-3 sm:gap-4 max-w-lg mx-auto">
+                            <button id="btn-pick-1" data-count="1" class="stone-pick-btn py-3.5 px-4 rounded-2xl bg-gradient-to-b from-slate-700 to-slate-800 hover:from-indigo-600 hover:to-indigo-700 border border-slate-600/70 hover:border-indigo-400 text-white font-bold text-sm sm:text-base shadow-lg transition-all active:scale-95 flex flex-col items-center justify-center gap-1 group">
+                                <span class="text-lg">🪨</span>
+                                <span>Take 1</span>
+                            </button>
+                            <button id="btn-pick-2" data-count="2" class="stone-pick-btn py-3.5 px-4 rounded-2xl bg-gradient-to-b from-slate-700 to-slate-800 hover:from-indigo-600 hover:to-indigo-700 border border-slate-600/70 hover:border-indigo-400 text-white font-bold text-sm sm:text-base shadow-lg transition-all active:scale-95 flex flex-col items-center justify-center gap-1 group">
+                                <div class="flex gap-0.5 text-lg">
+                                    <span>🪨</span><span>🪨</span>
+                                </div>
+                                <span>Take 2</span>
+                            </button>
+                            <button id="btn-pick-3" data-count="3" class="stone-pick-btn py-3.5 px-4 rounded-2xl bg-gradient-to-b from-slate-700 to-slate-800 hover:from-indigo-600 hover:to-indigo-700 border border-slate-600/70 hover:border-indigo-400 text-white font-bold text-sm sm:text-base shadow-lg transition-all active:scale-95 flex flex-col items-center justify-center gap-1 group">
+                                <div class="flex gap-0.5 text-lg">
+                                    <span>🪨</span><span>🪨</span><span>🪨</span>
+                                </div>
+                                <span>Take 3</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Sidebar: Player List & Move History -->
+                <div class="flex flex-col gap-5">
+                    
+                    <!-- Match Participants -->
+                    <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center justify-between">
+                            <span>Turn Order</span>
+                            <span class="text-[10px] text-slate-500 font-normal">Fixed order</span>
+                        </h3>
+                        <div id="arena-players-list" class="space-y-2">
+                            <!-- Injected Player Cards -->
+                        </div>
+                    </div>
+
+                    <!-- Move Log / History -->
+                    <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur flex-1 flex flex-col min-h-[220px]">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center justify-between">
+                            <span>Battle Chronicles</span>
+                            <span class="text-[10px] text-indigo-400 font-normal">Real-time</span>
+                        </h3>
+                        <div id="battle-log" class="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[240px] text-xs">
+                            <div class="text-slate-500 italic text-center py-4">The game has commenced!</div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ================= MODAL 1: INSTRUCTIONS & RULES ================= -->
+    <div id="rules-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md transition-opacity">
+        <div class="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden animate-stone-spawn">
+            <div class="absolute -top-16 -right-16 w-44 h-44 bg-amber-500/10 rounded-full blur-2xl"></div>
+
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-xl">
+                        📜
+                    </div>
+                    <div>
+                        <h2 class="text-xl sm:text-2xl font-cinzel font-bold text-white">How To Play</h2>
+                        <p class="text-xs text-amber-300 font-medium">Stone Pickup (Ancient Nim)</p>
+                    </div>
+                </div>
+                <button id="close-rules-x" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">✕</button>
+            </div>
+
+            <!-- Rules Content List -->
+            <div class="space-y-3.5 text-slate-300 text-xs sm:text-sm my-5">
+                <div class="flex items-start gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+                    <span class="text-base text-indigo-400 font-bold shrink-0">1.</span>
+                    <p><strong class="text-white">Secret Stone Mound:</strong> The initial number of stones is <span class="text-amber-300 font-bold">kept secret and hidden</span> from all players. The maximum possible stone count increases with the total number of players in the game.</p>
+                </div>
+
+                <div class="flex items-start gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+                    <span class="text-base text-indigo-400 font-bold shrink-0">2.</span>
+                    <p><strong class="text-white">Player Order:</strong> The player added first takes the <span class="text-emerald-400 font-semibold">first move</span>. Turns proceed strictly in the order players joined the lobby.</p>
+                </div>
+
+                <div class="flex items-start gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+                    <span class="text-base text-indigo-400 font-bold shrink-0">3.</span>
+                    <p><strong class="text-white">Stone Pick Rule:</strong> On your turn, you must take <span class="text-amber-300 font-bold">1, 2, or 3 stones</span> from the pile. If fewer stones remain than your choice, taking them claims all remaining stones.</p>
+                </div>
+
+                <div class="flex items-start gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+                    <span class="text-base text-indigo-400 font-bold shrink-0">4.</span>
+                    <p><strong class="text-white">The Victory Condition:</strong> Whosoever takes the <span class="text-amber-400 font-bold underline">very last stone</span> claims victory and triumphs as the champion!</p>
+                </div>
+            </div>
+
+            <!-- Modal Close Action -->
+            <button 
+                id="close-rules-btn"
+                class="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-400 hover:to-amber-600 text-slate-950 font-bold text-sm tracking-wide shadow-lg shadow-amber-500/20 transition-all active:scale-95"
+            >
+                Close & Enter Lobby
+            </button>
+        </div>
+    </div>
+
+    <!-- ================= MODAL 2: WINNER CELEBRATION ================= -->
+    <div id="winner-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-lg hidden">
+        <canvas id="confetti-canvas" class="absolute inset-0 pointer-events-none w-full h-full"></canvas>
+
+        <div class="w-full max-w-md bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-amber-500/60 rounded-3xl p-6 sm:p-8 text-center shadow-2xl relative overflow-hidden animate-stone-spawn z-10">
+            <div class="w-20 h-20 mx-auto rounded-3xl bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-4xl shadow-xl shadow-amber-500/30 mb-4 animate-bounce">
+                👑
+            </div>
+
+            <div class="text-xs uppercase tracking-widest text-amber-400 font-bold mb-1">Champion of the Stones</div>
+            <h2 id="winner-name" class="text-2xl sm:text-3xl font-cinzel font-bold text-white mb-2">Magnus</h2>
+            <p id="winner-tagline" class="text-xs text-slate-300 max-w-xs mx-auto mb-6">Claimed the final stone from the secret mound!</p>
+
+            <div class="grid grid-cols-2 gap-3 bg-slate-900/90 p-4 rounded-2xl border border-slate-800 mb-6 text-xs font-medium">
+                <div>
+                    <span class="text-slate-500 block">Total Turns</span>
+                    <span id="stat-total-moves" class="text-white font-bold text-lg font-mono">0</span>
+                </div>
+                <div>
+                    <span class="text-slate-500 block">Secret Initial Pile</span>
+                    <span id="stat-initial-stones" class="text-white font-bold text-lg font-mono">Revealed!</span>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-3">
+                <button id="play-again-btn" class="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/25 transition active:scale-95">
+                    🔄 Rematch
+                </button>
+                <button id="back-lobby-btn" class="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-sm transition active:scale-95">
+                    👥 New Roster
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= MODAL 3: PYTHON FLASK BACKEND & VS CODE GUIDE ================= -->
+    <div id="backend-modal" class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md hidden">
+        <div class="w-full max-w-4xl max-h-[90vh] bg-slate-900 border border-slate-700/80 rounded-3xl p-5 sm:p-7 shadow-2xl flex flex-col relative overflow-hidden">
+            
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-xl">
+                        🐍
+                    </div>
+                    <div>
+                        <h2 class="text-lg sm:text-xl font-bold text-white font-cinzel">Python Flask Backend & VS Code Guide</h2>
+                        <p class="text-xs text-indigo-300">Ready-to-run REST API architecture for VS Code</p>
+                    </div>
+                </div>
+                <button id="close-backend-btn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">✕</button>
+            </div>
+
+            <!-- Tab content -->
+            <div class="flex-1 overflow-y-auto py-4 space-y-4 pr-1 text-xs sm:text-sm text-slate-300">
+                
+                <!-- Quick Setup Steps -->
+                <div class="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-2">
+                    <h3 class="font-bold text-amber-300 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                        <span>⚡</span> How to run in VS Code in 3 minutes:
+                    </h3>
+                    <ol class="list-decimal list-inside space-y-1.5 text-xs text-slate-300 leading-relaxed">
+                        <li>Open <strong class="text-white">VS Code</strong> and create a new folder named <code class="bg-slate-800 px-1 py-0.5 rounded text-indigo-300">stone-game</code>.</li>
+                        <li>Open your VS Code Integrated Terminal (<kbd class="bg-slate-800 px-1 py-0.5 rounded text-slate-200">Ctrl + `</kbd> or <kbd class="bg-slate-800 px-1 py-0.5 rounded text-slate-200">Cmd + `</kbd>).</li>
+                        <li>Create & activate a virtual environment:
+                            <div class="bg-slate-900 p-2 rounded-lg font-mono text-[11px] text-emerald-400 my-1 overflow-x-auto">
+                                python -m venv venv<br>
+                                # Windows: venv\Scripts\activate<br>
+                                # Mac/Linux: source venv/bin/activate
+                            </div>
+                        </li>
+                        <li>Install Flask and Flask-CORS:
+                            <div class="bg-slate-900 p-2 rounded-lg font-mono text-[11px] text-emerald-400 my-1 overflow-x-auto">
+                                pip install flask flask-cors
+                            </div>
+                        </li>
+                        <li>Create a file named <code class="bg-slate-800 px-1 py-0.5 rounded text-amber-300">app.py</code>, paste the code below, and run:
+                            <div class="bg-slate-900 p-2 rounded-lg font-mono text-[11px] text-emerald-400 my-1 overflow-x-auto">
+                                python app.py
+                            </div>
+                        </li>
+                    </ol>
+                </div>
+
+                <!-- Python Server Code Box -->
+                <div class="relative bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
+                    <div class="flex items-center justify-between px-4 py-2 bg-slate-900/90 border-b border-slate-800">
+                        <span class="text-xs font-mono text-slate-400">app.py (Flask REST API Server with Hidden Pile)</span>
+                        <button id="copy-python-code-btn" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition flex items-center gap-1">
+                            <span>📋</span> <span id="copy-btn-text">Copy Code</span>
+                        </button>
+                    </div>
+                    <pre class="p-4 text-[11px] font-mono text-slate-300 overflow-x-auto leading-relaxed max-h-72"><code>import random
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)  # Enables cross-origin requests
+
+# Server-side authoritative state (exact pile count is never leaked to players)
+game_state = {
+    "status": "lobby",  # lobby | active | finished
+    "players": [],      # player names in turn order
+    "current_turn": 0,
+    "secret_stones": 0, # HIDDEN on server
+    "initial_stones": 0,
+    "round_number": 1,
+    "winner": None,
+    "history": []
+}
+
+def get_public_state():
+    """Returns state with stone counts hidden."""
+    rem = game_state["secret_stones"]
+    # Qualitative hint based on remaining stones
+    if rem > 25:
+        hint = "Hefty Mound"
+    elif rem > 12:
+        hint = "Substantial Heap"
+    elif rem > 5:
+        hint = "Dwindling Cluster"
+    else:
+        hint = "A Few Stones Remain"
+
+    return {
+        "status": game_state["status"],
+        "players": game_state["players"],
+        "current_turn": game_state["current_turn"],
+        "round_number": game_state["round_number"],
+        "pile_vibe": hint if game_state["status"] == "active" else "Concealed",
+        "winner": game_state["winner"],
+        "history": game_state["history"],
+        # Disclose actual count ONLY once the match finishes
+        "revealed_initial": game_state["initial_stones"] if game_state["status"] == "finished" else None
+    }
+
+@app.route("/api/state", methods=["GET"])
+def get_state():
+    return jsonify(get_public_state())
+
+@app.route("/api/players", methods=["POST"])
+def add_player():
+    if game_state["status"] != "lobby":
+        return jsonify({"error": "Cannot add players mid-game."}), 400
+    
+    data = request.get_json() or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "Player name cannot be empty."}), 400
+    if name in game_state["players"]:
+        return jsonify({"error": "Player already in circle."}), 400
+
+    game_state["players"].append(name)
+    return jsonify(get_public_state())
+
+@app.route("/api/start", methods=["POST"])
+def start_game():
+    n = len(game_state["players"])
+    if n < 2:
+        return jsonify({"error": "Need at least 2 players to start."}), 400
+
+    # Max stone count scales with total players; exact initial amount is kept secret!
+    stones = random.randint(15, 15 * n)
+    game_state["status"] = "active"
+    game_state["current_turn"] = 0
+    game_state["secret_stones"] = stones
+    game_state["initial_stones"] = stones
+    game_state["round_number"] = 1
+    game_state["winner"] = None
+    game_state["history"] = [{
+        "action": "start",
+        "message": f"Match started across {n} players. The sacred mound is sealed."
+    }]
+
+    return jsonify(get_public_state())
+
+@app.route("/api/move", methods=["POST"])
+def make_move():
+    if game_state["status"] != "active":
+        return jsonify({"error": "No active match."}), 400
+
+    data = request.get_json() or {}
+    pick = data.get("count")
+    if pick not in [1, 2, 3]:
+        return jsonify({"error": "Choice must be 1, 2, or 3 stones."}), 400
+
+    current_player = game_state["players"][game_state["current_turn"]]
+    actual_removed = min(pick, game_state["secret_stones"])
+    game_state["secret_stones"] -= actual_removed
+
+    if game_state["secret_stones"] <= 0:
+        game_state["status"] = "finished"
+        game_state["winner"] = current_player
+        game_state["history"].append({
+            "player": current_player,
+            "removed": actual_removed,
+            "message": f"🏆 {current_player} took the final stone(s) and WON!"
+        })
+    else:
+        game_state["history"].append({
+            "player": current_player,
+            "removed": actual_removed,
+            "message": f"{current_player} drew from the secret mound."
+        })
+        game_state["current_turn"] = (game_state["current_turn"] + 1) % len(game_state["players"])
+        if game_state["current_turn"] == 0:
+            game_state["round_number"] += 1
+
+    return jsonify(get_public_state())
+
+if __name__ == "__main__":
+    print("✨ Stone Game Server running at http://localhost:5000 (Secret Pile Enabled)")
+    app.run(host="0.0.0.0", port=5000, debug=True)</code></pre>
+                </div>
+            </div>
+
+            <div class="pt-3 border-t border-slate-800 flex justify-end">
+                <button id="close-backend-bottom-btn" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs transition">
+                    Done
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Web Audio Synthesizer Engine (Self-contained sound effects) -->
+    <script>
+        class SoundFX {
+            constructor() {
+                this.enabled = true;
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) {
+                        this.ctx = new AudioContext();
+                    }
+                }
+            }
+
+            playStoneClick(pitchOffset = 0) {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const filter = this.ctx.createBiquadFilter();
+
+                osc.type = 'triangle';
+                const freq = 440 + pitchOffset;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(120, this.ctx.currentTime + 0.08);
+
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(1400, this.ctx.currentTime);
+
+                gain.gain.setValueAtTime(0.35, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.08);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.09);
+            }
+
+            playTurnChime() {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(587.33, this.ctx.currentTime); // D5
+                osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.15); // A5
+
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
+            }
+
+            playVictoryFanfare() {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const notes = [440, 554.37, 659.25, 880];
+                notes.forEach((freq, i) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime + i * 0.1);
+
+                    gain.gain.setValueAtTime(0.25, this.ctx.currentTime + i * 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + i * 0.1 + 0.35);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(this.ctx.currentTime + i * 0.1);
+                    osc.stop(this.ctx.currentTime + i * 0.1 + 0.4);
+                });
+            }
+        }
+
+        const sfx = new SoundFX();
+    </script>
+
+    <!-- Confetti Particle System -->
+    <script>
+        class ConfettiSystem {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.particles = [];
+                this.animId = null;
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+            }
+
+            resize() {
+                if (this.canvas) {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                }
+            }
+
+            start() {
+                this.resize();
+                this.particles = [];
+                const colors = ['#f59e0b', '#ec4899', '#6366f1', '#10b981', '#3b82f6', '#fbbf24'];
+                for (let i = 0; i < 140; i++) {
+                    this.particles.push({
+                        x: this.canvas.width / 2 + (Math.random() - 0.5) * 200,
+                        y: this.canvas.height / 2 + (Math.random() - 0.5) * 100,
+                        vx: (Math.random() - 0.5) * 14,
+                        vy: (Math.random() - 1.2) * 16,
+                        size: Math.random() * 8 + 4,
+                        color: colors[Math.floor(Math.random() * colors.length)],
+                        rotation: Math.random() * 360,
+                        rotSpeed: (Math.random() - 0.5) * 12,
+                        opacity: 1
+                    });
+                }
+                if (this.animId) cancelAnimationFrame(this.animId);
+                this.loop();
+            }
+
+            loop() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                let alive = 0;
+                for (let p of this.particles) {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.35; // gravity
+                    p.vx *= 0.99;
+                    p.rotation += p.rotSpeed;
+                    p.opacity -= 0.005;
+
+                    if (p.opacity > 0 && p.y < this.canvas.height + 50) {
+                        alive++;
+                        this.ctx.save();
+                        this.ctx.translate(p.x, p.y);
+                        this.ctx.rotate((p.rotation * Math.PI) / 180);
+                        this.ctx.fillStyle = p.color;
+                        this.ctx.globalAlpha = Math.max(0, p.opacity);
+                        this.ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 1.5);
+                        this.ctx.restore();
+                    }
+                }
+                if (alive > 0) {
+                    this.animId = requestAnimationFrame(() => this.loop());
+                } else {
+                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                }
+            }
+
+            stop() {
+                if (this.animId) cancelAnimationFrame(this.animId);
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+        }
+
+        const confetti = new ConfettiSystem('confetti-canvas');
+    </script>
+
+    <!-- Main Game Logic Controller -->
+    <script>
+        // Preset Player Avatars and Themes
+        const AVATARS = ['🦅', '🐺', '🐉', '🦁', '🦉', '🦊', '⚡', '🏹', '💎', '🔥'];
+        const AVATAR_COLORS = [
+            'from-indigo-600 to-indigo-800 border-indigo-400',
+            'from-emerald-600 to-emerald-800 border-emerald-400',
+            'from-amber-600 to-amber-800 border-amber-400',
+            'from-rose-600 to-rose-800 border-rose-400',
+            'from-cyan-600 to-cyan-800 border-cyan-400',
+            'from-purple-600 to-purple-800 border-purple-400'
+        ];
+
+        // Central State
+        const gameState = {
+            players: [],          // array of { id, name, avatar, colorClass }
+            status: 'lobby',      // 'lobby', 'active', 'finished'
+            currentTurnIdx: 0,
+            secretStones: 0,      // Kept private / hidden from UI
+            initialStones: 0,     // Only revealed upon victory
+            roundNumber: 1,
+            moveHistory: []
+        };
+
+        // DOM Element References
+        const elements = {
+            // Views & Modals
+            lobbyView: document.getElementById('lobby-view'),
+            gameView: document.getElementById('game-view'),
+            rulesModal: document.getElementById('rules-modal'),
+            winnerModal: document.getElementById('winner-modal'),
+            backendModal: document.getElementById('backend-modal'),
+
+            // Rule modal controls
+            closeRulesBtn: document.getElementById('close-rules-btn'),
+            closeRulesX: document.getElementById('close-rules-x'),
+            openRulesBtn: document.getElementById('open-rules-btn'),
+
+            // Lobby elements
+            addPlayerForm: document.getElementById('add-player-form'),
+            playerNameInput: document.getElementById('player-name-input'),
+            addPlayerBtn: document.getElementById('add-player-btn'),
+            playersList: document.getElementById('players-list'),
+            emptyState: document.getElementById('empty-state'),
+            playerCountBadge: document.getElementById('player-count-badge'),
+            minPlayersWarning: document.getElementById('min-players-warning'),
+            startGameContainer: document.getElementById('start-game-container'),
+            startMatchBtn: document.getElementById('start-match-btn'),
+            clearPlayersBtn: document.getElementById('clear-players-btn'),
+            addErrorMsg: document.getElementById('add-error-msg'),
+            errorText: document.getElementById('error-text'),
+
+            // Game Arena elements
+            activeTurnAvatar: document.getElementById('active-turn-avatar'),
+            activePlayerName: document.getElementById('active-player-name'),
+            turnInstruction: document.getElementById('turn-instruction'),
+            pileVibeBadge: document.getElementById('pile-vibe-badge'),
+            totalPlayersBadge: document.getElementById('total-players-badge'),
+            roundCounterBadge: document.getElementById('round-counter-badge'),
+            stonePileContainer: document.getElementById('stone-pile-container'),
+            moundVisual: document.getElementById('mound-visual'),
+            pileStatusHint: document.getElementById('pile-status-hint'),
+            btnPick1: document.getElementById('btn-pick-1'),
+            btnPick2: document.getElementById('btn-pick-2'),
+            btnPick3: document.getElementById('btn-pick-3'),
+            arenaPlayersList: document.getElementById('arena-players-list'),
+            battleLog: document.getElementById('battle-log'),
+            abandonGameBtn: document.getElementById('abandon-game-btn'),
+
+            // Winner Modal elements
+            winnerName: document.getElementById('winner-name'),
+            statTotalMoves: document.getElementById('stat-total-moves'),
+            statInitialStones: document.getElementById('stat-initial-stones'),
+            playAgainBtn: document.getElementById('play-again-btn'),
+            backLobbyBtn: document.getElementById('back-lobby-btn'),
+
+            // Backend Modal elements
+            openBackendBtn: document.getElementById('open-backend-btn'),
+            closeBackendBtn: document.getElementById('close-backend-btn'),
+            closeBackendBottomBtn: document.getElementById('close-backend-bottom-btn'),
+            copyPythonCodeBtn: document.getElementById('copy-python-code-btn'),
+            copyBtnText: document.getElementById('copy-btn-text'),
+
+            // Audio Toggle
+            audioToggleBtn: document.getElementById('audio-toggle-btn'),
+            audioIcon: document.getElementById('audio-icon')
+        };
+
+        // ================= HELPER & RENDER FUNCTIONS =================
+
+        function showError(msg) {
+            elements.errorText.textContent = msg;
+            elements.addErrorMsg.classList.remove('hidden');
+        }
+
+        function clearError() {
+            elements.addErrorMsg.classList.add('hidden');
+        }
+
+        function updateLobbyUI() {
+            const count = gameState.players.length;
+            elements.playerCountBadge.textContent = count;
+
+            if (count === 0) {
+                elements.playersList.innerHTML = '';
+                elements.playersList.appendChild(elements.emptyState);
+                elements.emptyState.classList.remove('hidden');
+                elements.clearPlayersBtn.classList.add('hidden');
+            } else {
+                elements.emptyState.classList.add('hidden');
+                elements.clearPlayersBtn.classList.remove('hidden');
+                elements.playersList.innerHTML = '';
+
+                gameState.players.forEach((player, idx) => {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition animate-stone-spawn';
+                    row.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <span class="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center text-xs font-mono font-bold text-slate-400">#${idx + 1}</span>
+                            <div class="w-8 h-8 rounded-lg bg-gradient-to-tr ${player.colorClass} flex items-center justify-center text-sm shadow">
+                                ${player.avatar}
+                            </div>
+                            <div>
+                                <span class="font-medium text-sm text-slate-100">${escapeHtml(player.name)}</span>
+                                ${idx === 0 ? '<span class="ml-2 text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.5 rounded font-semibold">Moves 1st</span>' : ''}
+                            </div>
+                        </div>
+                        <button data-idx="${idx}" class="remove-player-btn text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Remove player">
+                            ✕
+                        </button>
+                    `;
+                    elements.playersList.appendChild(row);
+                });
+            }
+
+            // Notice vs Start Game Toggle: Require at least 2 players
+            if (count >= 2) {
+                elements.minPlayersWarning.classList.add('hidden');
+                elements.startGameContainer.classList.remove('hidden');
+            } else {
+                elements.minPlayersWarning.classList.remove('hidden');
+                elements.startGameContainer.classList.add('hidden');
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Add a new player
+        function handleAddPlayer(e) {
+            if (e) e.preventDefault();
+            clearError();
+
+            const name = elements.playerNameInput.value.trim();
+            if (!name) {
+                showError('Please enter a player name.');
+                return;
+            }
+
+            // Case-insensitive duplicate check
+            const exists = gameState.players.some(p => p.name.toLowerCase() === name.toLowerCase());
+            if (exists) {
+                showError('This player name is already in the roster.');
+                return;
+            }
+
+            const avatarIdx = gameState.players.length % AVATARS.length;
+            const colorIdx = gameState.players.length % AVATAR_COLORS.length;
+
+            gameState.players.push({
+                id: Date.now() + Math.random(),
+                name: name,
+                avatar: AVATARS[avatarIdx],
+                colorClass: AVATAR_COLORS[colorIdx]
+            });
+
+            elements.playerNameInput.value = '';
+            elements.playerNameInput.focus();
+            sfx.playStoneClick(100);
+            updateLobbyUI();
+        }
+
+        // Remove a player
+        elements.playersList.addEventListener('click', (e) => {
+            const btn = e.target.closest('.remove-player-btn');
+            if (btn) {
+                const idx = parseInt(btn.dataset.idx, 10);
+                gameState.players.splice(idx, 1);
+                sfx.playStoneClick(-80);
+                updateLobbyUI();
+            }
+        });
+
+        // Clear all players
+        elements.clearPlayersBtn.addEventListener('click', () => {
+            gameState.players = [];
+            updateLobbyUI();
+        });
+
+        // ================= MATCH START & ARENA LOGIC =================
+
+        function startMatch() {
+            if (gameState.players.length < 2) return;
+
+            const n = gameState.players.length;
+            // Secret pile: maximum stones scale with total players, but exact count is not revealed
+            const minStones = 15;
+            const maxStones = 15 * n;
+            const stones = Math.floor(Math.random() * (maxStones - minStones + 1)) + minStones;
+
+            gameState.status = 'active';
+            gameState.currentTurnIdx = 0; // Player 1 (first enrolled) moves first
+            gameState.secretStones = stones;
+            gameState.initialStones = stones;
+            gameState.roundNumber = 1;
+            gameState.moveHistory = [];
+
+            // Switch views
+            elements.lobbyView.classList.add('hidden');
+            elements.gameView.classList.remove('hidden');
+            elements.gameView.classList.add('flex');
+
+            // Reset Battle Log without showing stone count
+            elements.battleLog.innerHTML = `
+                <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-slate-400">
+                    <span class="text-amber-400 font-bold">✨ Match Began:</span> The sacred stone mound has been sealed. ${gameState.players[0].name} initiates the duel!
+                </div>
+            `;
+
+            sfx.playTurnChime();
+            renderMound();
+            updateArenaUI();
+        }
+
+        // Qualitative vibe calculation without giving away exact number
+        function getPileVibe(remaining) {
+            if (remaining > 25) return { label: 'Hefty Mound', hint: 'The mound looks dense and imposing.' };
+            if (remaining > 15) return { label: 'Substantial Heap', hint: 'A healthy heap of sacred stones.' };
+            if (remaining > 7) return { label: 'Dwindling Cluster', hint: 'The stones are clearly thinning out...' };
+            if (remaining > 3) return { label: 'Scattered Pebbles', hint: 'Only a few stones seem to remain!' };
+            return { label: 'Final Stones Near!', hint: 'Endgame imminent! Victory could be one move away!' };
+        }
+
+        // Renders an organic mysterious cluster without numbers or counts
+        function renderMound() {
+            elements.moundVisual.innerHTML = '';
+            const remaining = gameState.secretStones;
+
+            // Approximate cluster count to display organically (capped so players cannot count)
+            // Staggered layered pebbles with subtle natural offsets
+            const visualCount = Math.min(Math.max(remaining, 1), 22);
+
+            for (let i = 0; i < visualCount; i++) {
+                const stone = document.createElement('div');
+                const angle = (i * 137.5) * (Math.PI / 180); // Golden angle distribution
+                const distance = Math.min(75, 12 + Math.sqrt(i) * 16);
+                const x = Math.cos(angle) * distance;
+                const y = Math.sin(angle) * distance * 0.75; // slight isometric squish
+
+                const sizes = ['w-9 h-8', 'w-10 h-8', 'w-8 h-9', 'w-10 h-9', 'w-9 h-9'];
+                const sizeClass = sizes[i % sizes.length];
+                const roundedClass = (i % 2 === 0) ? 'rounded-[46%_54%_58%_42%]' : 'rounded-[52%_48%_44%_56%]';
+
+                stone.className = `pebble ${sizeClass} ${roundedClass} absolute transition-all duration-300`;
+                stone.style.transform = `translate(${x}px, ${y}px) rotate(${(i * 37) % 360}deg)`;
+                stone.style.zIndex = Math.floor(y + 100);
+
+                // Clicking the mound removes 1 stone
+                stone.addEventListener('click', () => handleStonePickup(1));
+                elements.moundVisual.appendChild(stone);
+            }
+        }
+
+        function updateArenaUI() {
+            const activePlayer = gameState.players[gameState.currentTurnIdx];
+            const vibe = getPileVibe(gameState.secretStones);
+
+            // Turn Banner updates
+            elements.activePlayerName.textContent = activePlayer.name;
+            elements.activeTurnAvatar.textContent = activePlayer.avatar;
+            elements.activeTurnAvatar.className = `w-14 h-14 rounded-2xl bg-gradient-to-tr ${activePlayer.colorClass} flex items-center justify-center text-2xl font-bold shadow-lg border-2 shrink-0 transition-transform duration-300 animate-pulse-glow`;
+            
+            // Concealed qualitative status (NO exact numbers shown)
+            elements.pileVibeBadge.textContent = vibe.label;
+            elements.totalPlayersBadge.textContent = gameState.players.length;
+            elements.roundCounterBadge.textContent = gameState.roundNumber;
+            elements.pileStatusHint.textContent = vibe.hint;
+
+            // Pick buttons remain active (1, 2, 3)
+            elements.btnPick1.disabled = false;
+            elements.btnPick2.disabled = false;
+            elements.btnPick3.disabled = false;
+
+            renderArenaPlayerCards();
+        }
+
+        function renderArenaPlayerCards() {
+            elements.arenaPlayersList.innerHTML = '';
+            gameState.players.forEach((player, idx) => {
+                const isActive = (idx === gameState.currentTurnIdx);
+                const card = document.createElement('div');
+                card.className = `flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                    isActive 
+                        ? 'bg-indigo-950/70 border-indigo-500 shadow-md shadow-indigo-500/20 translate-x-1' 
+                        : 'bg-slate-950/50 border-slate-800/80 opacity-70'
+                }`;
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-7 h-7 rounded-lg bg-gradient-to-tr ${player.colorClass} flex items-center justify-center text-xs shadow">
+                            ${player.avatar}
+                        </div>
+                        <span class="text-xs font-semibold ${isActive ? 'text-white' : 'text-slate-300'}">${escapeHtml(player.name)}</span>
+                    </div>
+                    ${isActive ? '<span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-300 border border-indigo-500/50 animate-pulse">Taking Turn</span>' : `<span class="text-[11px] font-mono text-slate-500">#${idx + 1}</span>`}
+                `;
+                elements.arenaPlayersList.appendChild(card);
+            });
+        }
+
+        function logMove(playerName, avatar, count, isWin = false) {
+            const entry = document.createElement('div');
+            entry.className = `p-2.5 rounded-xl text-xs border ${
+                isWin 
+                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-200' 
+                    : 'bg-slate-950/60 border-slate-800 text-slate-300'
+            } animate-stone-spawn`;
+
+            entry.innerHTML = `
+                <div class="flex items-center justify-between font-semibold mb-0.5">
+                    <span class="flex items-center gap-1.5">
+                        <span>${avatar}</span>
+                        <span class="text-white">${escapeHtml(playerName)}</span>
+                    </span>
+                    <span class="font-mono text-[10px] text-slate-400">Round ${gameState.roundNumber}</span>
+                </div>
+                <div class="text-[11px]">
+                    ${isWin 
+                        ? `👑 Took the final <strong>${count}</strong> stone(s) and <span class="text-amber-300 font-bold uppercase tracking-wider">WON THE MATCH!</span>` 
+                        : `Removed <strong>${count}</strong> stone(s) from the sacred mound.`}
+                </div>
+            `;
+
+            elements.battleLog.prepend(entry);
+        }
+
+        // Handle Player Stone Pickup Move
+        function handleStonePickup(choice) {
+            if (gameState.status !== 'active') return;
+            if (choice < 1 || choice > 3) return;
+
+            const activePlayer = gameState.players[gameState.currentTurnIdx];
+
+            // If player chooses more stones than actually remain secretly, they take all remaining stones and win!
+            const actualRemoved = Math.min(choice, gameState.secretStones);
+
+            // Animate stones being pulled from mound
+            const stoneNodes = elements.moundVisual.querySelectorAll('.pebble');
+            for (let i = 0; i < actualRemoved; i++) {
+                if (stoneNodes[i]) {
+                    stoneNodes[i].classList.add('animate-stone-pop');
+                }
+            }
+
+            sfx.playStoneClick(actualRemoved * 60);
+
+            setTimeout(() => {
+                gameState.secretStones -= actualRemoved;
+                gameState.moveHistory.push({
+                    player: activePlayer.name,
+                    removed: actualRemoved
+                });
+
+                // Check Victory Condition: whoever removes the last stone wins
+                if (gameState.secretStones <= 0) {
+                    logMove(activePlayer.name, activePlayer.avatar, actualRemoved, true);
+                    triggerVictory(activePlayer);
+                } else {
+                    logMove(activePlayer.name, activePlayer.avatar, actualRemoved, false);
+                    
+                    // Advance to next player
+                    gameState.currentTurnIdx = (gameState.currentTurnIdx + 1) % gameState.players.length;
+                    if (gameState.currentTurnIdx === 0) {
+                        gameState.roundNumber++;
+                    }
+
+                    sfx.playTurnChime();
+                    renderMound();
+                    updateArenaUI();
+                }
+            }, 180);
+        }
+
+        // ================= VICTORY & RESTART =================
+
+        function triggerVictory(winner) {
+            gameState.status = 'finished';
+            sfx.playVictoryFanfare();
+            confetti.start();
+
+            elements.winnerName.textContent = winner.name;
+            elements.statTotalMoves.textContent = gameState.moveHistory.length;
+            // The initial count is finally revealed as a post-game stat!
+            elements.statInitialStones.textContent = `${gameState.initialStones} stones`;
+
+            elements.winnerModal.classList.remove('hidden');
+        }
+
+        function restartMatchSamePlayers() {
+            elements.winnerModal.classList.add('hidden');
+            confetti.stop();
+            startMatch();
+        }
+
+        function quitToLobby() {
+            elements.winnerModal.classList.add('hidden');
+            confetti.stop();
+            gameState.status = 'lobby';
+            elements.gameView.classList.add('hidden');
+            elements.gameView.classList.remove('flex');
+            elements.lobbyView.classList.remove('hidden');
+            updateLobbyUI();
+        }
+
+        // ================= EVENT LISTENERS =================
+
+        // Rules Modal
+        elements.closeRulesBtn.addEventListener('click', () => {
+            elements.rulesModal.classList.add('hidden');
+        });
+        elements.closeRulesX.addEventListener('click', () => {
+            elements.rulesModal.classList.add('hidden');
+        });
+        elements.openRulesBtn.addEventListener('click', () => {
+            elements.rulesModal.classList.remove('hidden');
+        });
+
+        // Add player
+        elements.addPlayerForm.addEventListener('submit', handleAddPlayer);
+        elements.playerNameInput.addEventListener('input', clearError);
+
+        // Start Match
+        elements.startMatchBtn.addEventListener('click', startMatch);
+
+        // Stone pickup action buttons
+        elements.btnPick1.addEventListener('click', () => handleStonePickup(1));
+        elements.btnPick2.addEventListener('click', () => handleStonePickup(2));
+        elements.btnPick3.addEventListener('click', () => handleStonePickup(3));
+
+        // Keyboard shortcuts for picks (Keys 1, 2, 3)
+        window.addEventListener('keydown', (e) => {
+            if (gameState.status === 'active' && elements.winnerModal.classList.contains('hidden')) {
+                if (e.key === '1') handleStonePickup(1);
+                if (e.key === '2') handleStonePickup(2);
+                if (e.key === '3') handleStonePickup(3);
+            }
+        });
+
+        // Abandon / Quit button
+        elements.abandonGameBtn.addEventListener('click', () => {
+            quitToLobby();
+        });
+
+        // Winner modal buttons
+        elements.playAgainBtn.addEventListener('click', restartMatchSamePlayers);
+        elements.backLobbyBtn.addEventListener('click', quitToLobby);
+
+        // Python backend modal
+        elements.openBackendBtn.addEventListener('click', () => {
+            elements.backendModal.classList.remove('hidden');
+        });
+        elements.closeBackendBtn.addEventListener('click', () => {
+            elements.backendModal.classList.add('hidden');
+        });
+        elements.closeBackendBottomBtn.addEventListener('click', () => {
+            elements.backendModal.classList.add('hidden');
+        });
+
+        // Copy Python code button
+        elements.copyPythonCodeBtn.addEventListener('click', () => {
+            const code = document.querySelector('#backend-modal code').innerText;
+            const textarea = document.createElement('textarea');
+            textarea.value = code;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                elements.copyBtnText.textContent = 'Copied! ✓';
+                setTimeout(() => {
+                    elements.copyBtnText.textContent = 'Copy Code';
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy', err);
+            }
+            document.body.removeChild(textarea);
+        });
+
+        // Audio Toggle
+        elements.audioToggleBtn.addEventListener('click', () => {
+            sfx.enabled = !sfx.enabled;
+            elements.audioIcon.textContent = sfx.enabled ? '🔊' : '🔇';
+            elements.audioToggleBtn.classList.toggle('text-rose-400', !sfx.enabled);
+        });
+
+        // Initial setup on window load
+        window.onload = function() {
+            gameState.players.push(
+                { id: 1, name: 'Alex', avatar: AVATARS[0], colorClass: AVATAR_COLORS[0] },
+                { id: 2, name: 'Jordan', avatar: AVATARS[1], colorClass: AVATAR_COLORS[1] }
+            );
+            updateLobbyUI();
+        };
+    </script>
+</body>
+</html>
